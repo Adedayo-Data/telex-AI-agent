@@ -22,7 +22,6 @@ public class AgentController {
     public ResponseEntity<?> handleMessage(
             @RequestBody A2ADto.A2ARequest request) {
 
-        // --- 1. VALIDATE THE REQUEST ---
         if (!"message/send".equals(request.method())) {
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid method"));
         }
@@ -37,7 +36,6 @@ public class AgentController {
                 }
             }
 
-            // The last text part in the entire structure is the user's *newest* prompt.
             String userPrompt = allTextParts.isEmpty() ? "" : allTextParts.get(allTextParts.size() - 1);
 
             if (userPrompt.trim().isEmpty()) {
@@ -46,46 +44,38 @@ public class AgentController {
                 );
             }
 
-            // --- 3. CALL OUR "BRAIN" (This part is unchanged!) ---
             String aiResponseText = geminiService.generateAIQuestions(userPrompt);
 
-            // --- 4. BUILD THE FORMAL A2A RESPONSE ---
             String taskId = "task-" + UUID.randomUUID();
             String artifactId = "artifact-" + UUID.randomUUID();
 
-            // Create the text part for our AI's response
             A2ADto.Part aiPart = new A2ADto.Part("text", aiResponseText, null);
 
-            // Create the "Artifact" (the main content)
             A2ADto.Artifact artifact = new A2ADto.Artifact(
                     artifactId,
                     "Interview Questions",
                     List.of(aiPart)
             );
 
-            // Create the "Message" for the status
             A2ADto.Message statusMessage = new A2ADto.Message(
                     "agent",
                     List.of(aiPart),
                     "msg-" + UUID.randomUUID()
             );
 
-            // Create the "Status"
             A2ADto.Status status = new A2ADto.Status(
-                    "input-required", // This tells Telex the agent is done and waiting for more input
+                    "input-required",
                     statusMessage
             );
 
-            // Create the final "Result"
             A2ADto.Result result = new A2ADto.Result(
                     taskId,
-                    taskId, // Use task ID as context ID for simplicity
+                    taskId,
                     status,
                     List.of(artifact),
-                    List.of() // Empty history
+                    List.of()
             );
 
-            // Create the final JSON-RPC Response
             A2ADto.A2AResponse a2aResponse = new A2ADto.A2AResponse(
                     "2.0",      // Must be "2.0"
                     request.id(), // Must be the same ID from the request
@@ -103,7 +93,6 @@ public class AgentController {
         }
     }
 
-    // --- Helper to build an Error Response ---
     private A2ADto.A2AResponse createErrorResponse(String requestId, String errorMessage) {
         String taskId = "task-" + UUID.randomUUID();
 
@@ -128,7 +117,7 @@ public class AgentController {
         return new A2ADto.A2AResponse("2.0", requestId, errorResult);
     }
 
-    // Health check stays the same
+
     @GetMapping("/health")
     public ResponseEntity<Map<String, String>> healthCheck() {
         return ResponseEntity.ok(Map.of("status", "ok", "message", "Agent is running"));
@@ -139,14 +128,11 @@ public class AgentController {
      */
     private void findTextRecursively(A2ADto.Part part, List<String> textParts) {
         if ("text".equals(part.kind()) && part.text() != null && !part.text().isBlank()) {
-            // This is a small hack: Telex sends both the clean text and a <p> version.
-            // We'll ignore the <p> version to avoid duplicates.
             if (!part.text().startsWith("<p>")) {
                 textParts.add(part.text());
             }
         }
 
-        // If this part has a 'data' array, search inside it
         if (part.data() != null) {
             for (A2ADto.Part nestedPart : part.data()) {
                 findTextRecursively(nestedPart, textParts);
