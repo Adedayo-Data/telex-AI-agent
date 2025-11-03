@@ -6,9 +6,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.ArrayList;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/agent")
@@ -28,12 +29,16 @@ public class AgentController {
 
         try {
             // --- 2. EXTRACT THE USER'S PROMPT ---
-            // Find the first "text" part in the message
-            String userPrompt = request.params().message().parts().stream()
-                    .filter(part -> "text".equals(part.kind()))
-                    .findFirst()
-                    .map(A2ADto.Part::text)
-                    .orElse("");
+            // We must recursively search for all text parts and get the LAST one.
+            List<String> allTextParts = new ArrayList<>();
+            if (request.params().message().parts() != null) {
+                for (A2ADto.Part part : request.params().message().parts()) {
+                    findTextRecursively(part, allTextParts);
+                }
+            }
+
+            // The last text part in the entire structure is the user's *newest* prompt.
+            String userPrompt = allTextParts.isEmpty() ? "" : allTextParts.get(allTextParts.size() - 1);
 
             if (userPrompt.trim().isEmpty()) {
                 return ResponseEntity.ok(
@@ -49,7 +54,7 @@ public class AgentController {
             String artifactId = "artifact-" + UUID.randomUUID();
 
             // Create the text part for our AI's response
-            A2ADto.Part aiPart = new A2ADto.Part("text", aiResponseText);
+            A2ADto.Part aiPart = new A2ADto.Part("text", aiResponseText, null);
 
             // Create the "Artifact" (the main content)
             A2ADto.Artifact artifact = new A2ADto.Artifact(
@@ -102,7 +107,7 @@ public class AgentController {
     private A2ADto.A2AResponse createErrorResponse(String requestId, String errorMessage) {
         String taskId = "task-" + UUID.randomUUID();
 
-        A2ADto.Part errorPart = new A2ADto.Part("text", errorMessage);
+        A2ADto.Part errorPart = new A2ADto.Part("text", errorMessage, null);
 
         A2ADto.Message errorMessageObj = new A2ADto.Message(
                 "agent",
@@ -127,5 +132,25 @@ public class AgentController {
     @GetMapping("/health")
     public ResponseEntity<Map<String, String>> healthCheck() {
         return ResponseEntity.ok(Map.of("status", "ok", "message", "Agent is running"));
+    }
+
+    /**
+     * Recursively searches the A2A parts structure to find all plain-text parts.
+     */
+    private void findTextRecursively(A2ADto.Part part, List<String> textParts) {
+        if ("text".equals(part.kind()) && part.text() != null && !part.text().isBlank()) {
+            // This is a small hack: Telex sends both the clean text and a <p> version.
+            // We'll ignore the <p> version to avoid duplicates.
+            if (!part.text().startsWith("<p>")) {
+                textParts.add(part.text());
+            }
+        }
+
+        // If this part has a 'data' array, search inside it
+        if (part.data() != null) {
+            for (A2ADto.Part nestedPart : part.data()) {
+                findTextRecursively(nestedPart, textParts);
+            }
+        }
     }
 }

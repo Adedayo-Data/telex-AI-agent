@@ -1,5 +1,7 @@
 package com.hng.telexAgent.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import java.util.List;
 
 // This container file holds the REAL A2A JSON-RPC 2.0 contract
@@ -29,9 +31,14 @@ public final class A2ADto {
     ) {}
 
     // This is the "part" object
+    // Inside public final class A2ADto
+// ...
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record Part(
-            String kind, // "text"
-            String text  // "Get me questions for a Backend Developer"
+            String kind,
+            String text,
+            List<Part> data  // <-- ADD THIS LINE
     ) {}
 
 
